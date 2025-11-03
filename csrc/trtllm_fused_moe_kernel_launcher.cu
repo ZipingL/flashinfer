@@ -133,12 +133,6 @@ void trtllm_fp8_per_tensor_scale_moe_launcher(
     // This check ensures we have enough experts in the selected groups to handle the top_k routing
     TVM_FFI_ICHECK_LT(top_k, (topk_group.value() * num_experts / n_group.value()))
         << "top_k must be less than total number of experts in selected groups";
-  } else if (static_cast<RoutingMethodType>(routing_method_type) ==
-                 RoutingMethodType::Renormalize ||
-             static_cast<RoutingMethodType>(routing_method_type) ==
-                 RoutingMethodType::RenormalizeNaive) {
-    TVM_FFI_LOG_AND_THROW(NotImplementedError)
-        << "Don't support routing method type Renormalize(Naive).";
   } else if (static_cast<RoutingMethodType>(routing_method_type) == RoutingMethodType::Llama4) {
     TVM_FFI_ICHECK_EQ(top_k, 1)
         << "Current routing kernel (no groups, Llama4) only supports top_k=1.";

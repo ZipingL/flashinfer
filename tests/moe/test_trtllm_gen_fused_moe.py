@@ -2217,6 +2217,7 @@ def test_deepseekv3_routing(
         pytest.param(FP4Moe(quant_mode=QuantMode.FP4_MXFP4_MXFP8), id="MxFP4xMxFP8"),
         pytest.param(FP4Moe(quant_mode=QuantMode.FP4_MXFP4_Bf16), id="MxFP4xBf16"),
         pytest.param(FP8BlockScaleMoe(), id="FP8_Block"),
+        pytest.param(FP8PerTensorMoe(), id="FP8_Tensor"),
     ],
 )
 @pytest.mark.parametrize(
@@ -2231,8 +2232,11 @@ def test_deepseekv3_routing(
                 "top_k_groups": None,
                 "routed_scaling": None,
                 "has_routing_bias": False,
-                "routing_method_type": RoutingMethodType.Renormalize,
-                "compatible_moe_impls": [FP8BlockScaleMoe, FP4Moe],
+                "routing_method_type": [
+                    RoutingMethodType.Renormalize,
+                    RoutingMethodType.RenormalizeNaive,
+                ],
+                "compatible_moe_impls": [FP8PerTensorMoe, FP8BlockScaleMoe, FP4Moe],
                 "compatible_intermediate_size": [384, 768, 1024, 2048],
             },
             id="Renorm",
