@@ -305,6 +305,11 @@ void trtllm_fp8_per_tensor_scale_moe_launcher(
   workspace.permuted_idx_to_token_idx =
       static_cast<int*>(permuted_idx_to_token_idx.data_ptr());  // Needed by permuteGemm1 kernel
   workspace.expert_weights = expert_weights.data_ptr();         // Consumed by finalize kernel
+  workspace.token_scales = expert_weights.data_ptr();           // Consumed by permuteGemm1 kernel
+  if (static_cast<RoutingMethodType>(routing_method_type) == RoutingMethodType::Renormalize ||
+      static_cast<RoutingMethodType>(routing_method_type) == RoutingMethodType::RenormalizeNaive) {
+    workspace.token_scales = nullptr;
+  }
 
   workspace.cta_idx_xy_to_batch_idx = static_cast<int*>(cta_idx_xy_to_batch_idx.data_ptr());
   workspace.cta_idx_xy_to_mn_limit = static_cast<int*>(cta_idx_xy_to_mn_limit.data_ptr());
@@ -661,6 +666,7 @@ void trtllm_fp8_block_scale_moe_launcher(
   workspace.permuted_idx_to_token_idx =
       static_cast<int*>(permuted_idx_to_token_idx.data_ptr());  // Needed by permuteGemm1 kernel
   workspace.expert_weights = expert_weights.data_ptr();         // Consumed by finalize kernel
+  workspace.token_scales = expert_weights.data_ptr();           // Consumed by permuteGemm1 kernel
 
   workspace.cta_idx_xy_to_batch_idx = static_cast<int*>(cta_idx_xy_to_batch_idx.data_ptr());
   workspace.cta_idx_xy_to_mn_limit = static_cast<int*>(cta_idx_xy_to_mn_limit.data_ptr());
@@ -1112,6 +1118,7 @@ Array<Tensor> trtllm_fp4_block_scale_moe_launcher(
   workspace.permuted_idx_to_token_idx =
       static_cast<int*>(permuted_idx_to_token_idx.data_ptr());  // Needed by permuteGemm1 kernel
   workspace.expert_weights = expert_weights.data_ptr();         // Consumed by finalize kernel
+  workspace.token_scales = expert_weights.data_ptr();           // Consumed by permuteGemm1 kernel
 
   workspace.cta_idx_xy_to_batch_idx = static_cast<int*>(cta_idx_xy_to_batch_idx.data_ptr());
   workspace.cta_idx_xy_to_mn_limit = static_cast<int*>(cta_idx_xy_to_mn_limit.data_ptr());

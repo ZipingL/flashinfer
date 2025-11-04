@@ -2232,15 +2232,11 @@ def test_deepseekv3_routing(
                 "top_k_groups": None,
                 "routed_scaling": None,
                 "has_routing_bias": False,
-                "routing_method_type": [
-                    RoutingMethodType.Renormalize,
-                    RoutingMethodType.RenormalizeNaive,
-                ],
+                "routing_method_type": RoutingMethodType.Renormalize,
                 "compatible_moe_impls": [FP8PerTensorMoe, FP8BlockScaleMoe, FP4Moe],
                 "compatible_intermediate_size": [384, 768, 1024, 2048],
             },
             id="Renorm",
-            marks=pytest.mark.skip(reason="Skip temporary"),
         ),
         pytest.param(
             {
