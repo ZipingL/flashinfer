@@ -91,7 +91,21 @@ class FlashInferJITLogger(logging.Logger):
 
 logger = FlashInferJITLogger("flashinfer.jit")
 
- 
+
+def check_cuda_arch():
+    # Collect all detected CUDA architectures
+    eligible = False
+    for major, minor in current_compilation_context.TARGET_CUDA_ARCHS:
+        if major >= 8:
+            eligible = True
+        elif major == 7 and minor.isdigit():
+            if int(minor) >= 5:
+                eligible = True
+
+    # Raise error only if all detected architectures are lower than sm75
+    if not eligible:
+        raise RuntimeError("FlashInfer requires GPUs with sm75 or higher")
+
 
 def clear_cache_dir():
     if os.path.exists(jit_env.FLASHINFER_JIT_DIR):
