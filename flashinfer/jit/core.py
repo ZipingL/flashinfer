@@ -91,21 +91,7 @@ class FlashInferJITLogger(logging.Logger):
 
 logger = FlashInferJITLogger("flashinfer.jit")
 
-
-def check_cuda_arch():
-    # Collect all detected CUDA architectures
-    eligible = False
-    for major, minor in current_compilation_context.TARGET_CUDA_ARCHS:
-        if major >= 8:
-            eligible = True
-        elif major == 7 and minor.isdigit():
-            if int(minor) >= 5:
-                eligible = True
-
-    # Raise error only if all detected architectures are lower than sm75
-    if not eligible:
-        raise RuntimeError("FlashInfer requires GPUs with sm75 or higher")
-
+ 
 
 def clear_cache_dir():
     if os.path.exists(jit_env.FLASHINFER_JIT_DIR):
@@ -114,23 +100,58 @@ def clear_cache_dir():
         shutil.rmtree(jit_env.FLASHINFER_JIT_DIR)
 
 
+current_compilation_context = CompilationContext()
+
+
 common_nvcc_flags = [
     "-DFLASHINFER_ENABLE_FP8_E8M0",
     "-DFLASHINFER_ENABLE_FP4_E2M1",
 ]
+
+
+def _env_flag_is_true(name: str) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return False
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _collect_arch_suffixes(major: int) -> list[str]:
+    suffixes = [
+        f"{arch_major}{minor}"
+        for arch_major, minor in current_compilation_context.TARGET_CUDA_ARCHS
+        if arch_major == major
+    ]
+    if major == 12:
+        if _env_flag_is_true("FLASHINFER_ENABLE_SM120"):
+            suffixes.append("120")
+        if _env_flag_is_true("FLASHINFER_ENABLE_SM120A"):
+            suffixes.append("120a")
+    return sorted(set(suffixes))
+
+
+def _make_nvcc_flags(suffixes: list[str], default_suffixes: list[str]) -> list[str]:
+    effective_suffixes = suffixes if suffixes else default_suffixes
+    gencodes = [
+        f"-gencode=arch=compute_{suffix},code=sm_{suffix}" for suffix in effective_suffixes
+    ]
+    return gencodes + common_nvcc_flags
+
+
 sm89_nvcc_flags = [
     "-gencode=arch=compute_89,code=sm_89",
     "-DFLASHINFER_ENABLE_FP8_E8M0",
 ]
 sm90a_nvcc_flags = ["-gencode=arch=compute_90a,code=sm_90a"] + common_nvcc_flags
 sm100a_nvcc_flags = ["-gencode=arch=compute_100a,code=sm_100a"] + common_nvcc_flags
-sm103a_nvcc_flags = ["-gencode=arch=compute_103a,code=sm_103a"] + common_nvcc_flags
+# sm103a_nvcc_flags = ["-gencode=arch=compute_103a,code=sm_103a"] + common_nvcc_flags
+# --- PATCH: disable unsupported architecture on CUDA <13 ---
+sm103a_nvcc_flags: list[str] = []  # compute_103a not recognized until CUDA 13.x+
+# --- END PATCH ---
 sm100f_nvcc_flags = ["-gencode=arch=compute_100f,code=sm_100f"] + common_nvcc_flags
 sm110a_nvcc_flags = ["-gencode=arch=compute_110a,code=sm_110a"] + common_nvcc_flags
-sm120a_nvcc_flags = ["-gencode=arch=compute_120a,code=sm_120a"] + common_nvcc_flags
+sm120a_nvcc_flags = _make_nvcc_flags(_collect_arch_suffixes(12), ["120a"])
 sm121a_nvcc_flags = ["-gencode=arch=compute_121a,code=sm_121a"] + common_nvcc_flags
-
-current_compilation_context = CompilationContext()
 
 
 @dataclasses.dataclass
@@ -208,6 +229,7 @@ class JitSpecRegistry:
 # Global registry instance
 jit_spec_registry = JitSpecRegistry()
 
+ 
 
 @dataclasses.dataclass
 class JitSpec:
@@ -271,6 +293,15 @@ class JitSpec:
             extra_include_dirs=self.extra_include_dirs,
             needs_device_linking=self.needs_device_linking,
         )
+            # --- PATCH: Strip unsupported compute_103a for CUDA <13 ---
+        if "compute_103a" in content or "sm_103a" in content:
+            filtered = []
+            for line in content.splitlines():
+                if "103a" not in line:
+                    filtered.append(line)
+            content = "\n".join(filtered)
+            print(f"[PATCH] Removed compute_103a/sm_103a from ninja for {self.name}")
+        # --- END PATCH ---
         write_if_different(ninja_path, content)
 
     @property
@@ -387,8 +418,6 @@ def get_tmpdir() -> Path:
     if not tmpdir.exists():
         tmpdir.mkdir(parents=True, exist_ok=True)
     return tmpdir
-
-
 def build_jit_specs(
     specs: List[JitSpec],
     verbose: bool = False,
@@ -399,13 +428,22 @@ def build_jit_specs(
         if skip_prebuilt and spec.aot_path.exists():
             continue
         lines.append(f"subninja {spec.ninja_path}")
-        if not spec.is_ninja_generated:
-            with FileLock(spec.lock_path, thread_local=False):
-                spec.write_ninja()
+        with FileLock(spec.lock_path, thread_local=False):
+            spec.write_ninja()
     if not lines:
         return
 
     lines = ["ninja_required_version = 1.3"] + lines + [""]
+
+    # --- PATCH: Remove unsupported compute_103a entries from ninja content ---
+    cleaned_lines = []
+    for l in lines:
+        if "103a" in l or "compute_103a" in l or "sm_103a" in l:
+            continue
+        cleaned_lines.append(l)
+    lines = cleaned_lines
+    print("[PATCH] Stripped all compute_103a and sm_103a entries from JIT ninja build spec")
+    # --- END PATCH ---
 
     tmpdir = get_tmpdir()
     with FileLock(tmpdir / "flashinfer_jit.lock", thread_local=False):

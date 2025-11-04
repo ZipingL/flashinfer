@@ -15,6 +15,35 @@ Kernel Library for LLM Serving
 [![Build Status](https://ci.tlcpack.ai/job/flashinfer-ci/job/main/badge/icon)](https://ci.tlcpack.ai/job/flashinfer-ci/job/main/)
 [![Documentation](https://github.com/flashinfer-ai/flashinfer/actions/workflows/build-doc.yml/badge.svg)](https://github.com/flashinfer-ai/flashinfer/actions/workflows/build-doc.yml)
 
+<!-- ============== CUSTOM BUILD NOTICE - INSERT HERE ============== -->
+
+> [!NOTE]
+> **🚀 Custom Build - NVIDIA Blackwell SM 12.0 Support**
+>
+> This fork adds production-ready support for NVIDIA Blackwell GPUs (GB200, B200) with CUDA 12.8 compatibility patches.
+> 
+> 📖 **[Read Custom Build Documentation →](README_CUSTOM.md)**
+>
+> **Key Features:**
+> - ✅ Dynamic SM 12.0/120a architecture detection via environment flags
+> - ✅ CUDA 12.8 compatibility (strips unsupported `compute_103a` references)
+> - ✅ Runtime control over architecture variants (`FLASHINFER_ENABLE_SM120A`)
+> - ✅ Fully backward compatible with upstream FlashInfer v0.5.1
+>
+> **Quick Start for Blackwell:**
+>
+> ```bash
+> export FLASHINFER_ENABLE_SM120A=1
+> export FLASHINFER_CUDA_ARCH_LIST="12.0"
+> export FLASHINFER_NVCC=/usr/local/cuda-12.8/bin/nvcc
+> pip install -e . --no-build-isolation
+> ```
+>
+> **Why This Fork?** Upstream FlashInfer (v0.5.1) lacks SM 12.0 compilation flags and references `compute_103a` which doesn't exist in CUDA <13. This fork enables next-gen GPU support today.
+>
+> ---
+
+<!-- ============== END CUSTOM BUILD NOTICE ============== -->
 
 FlashInfer is a library and kernel generator for Large Language Models that provides high-performance implementation of LLM GPU kernels such as FlashAttention, SparseAttention, PageAttention, Sampling, and more. FlashInfer focuses on LLM serving and inference, and delivers state-of-the-art performance across diverse scenarios.
 

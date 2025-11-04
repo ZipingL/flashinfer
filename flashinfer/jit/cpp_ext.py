@@ -171,6 +171,50 @@ def generate_ninja_build_for_op(
         # No module flags, use global flags
         cuda_cflags += global_flags
 
+    # Sanitize gencode flags based on nvcc version and explicit env arch list
+    # - Drop SMs unsupported by current CUDA (e.g., 103a requires >= 12.9; 120a/121a require >= 13.0)
+    # - If FLASHINFER_CUDA_ARCH_LIST is provided, restrict -gencode entries to that set
+    try:
+        cuda_ver = get_cuda_version()
+    except Exception:
+        cuda_ver = Version("0.0")
+
+    # Build allowed compute_xxx tokens from env var, if present
+    allowed_compute: Optional[set] = None
+    arch_env = os.environ.get("FLASHINFER_CUDA_ARCH_LIST")
+    if arch_env:
+        allowed_compute = set()
+        for token in arch_env.split():
+            parts = token.split(".")
+            if len(parts) >= 2:
+                major = parts[0]
+                minor = parts[1]
+                # Normalize like 9.0a -> compute_90a, 10.3a -> compute_103a, 8.9 -> compute_89
+                try:
+                    major_i = int(major)
+                except ValueError:
+                    continue
+                allowed_compute.add(f"compute_{major_i}{minor}")
+
+    def _keep_gencode(flag: str) -> bool:
+        if not flag.startswith("-gencode="):
+            return True
+        # Extract compute and sm identifiers
+        m = re.search(r"arch=compute_([0-9]+a?)", flag)
+        compute = f"compute_{m.group(1)}" if m else None
+        if compute is not None:
+            # Gate by CUDA version
+            if compute == "compute_103a" and cuda_ver < Version("12.9"):
+                return False
+            if compute in ("compute_120a", "compute_121a") and cuda_ver < Version("13.0"):
+                return False
+            # Restrict to explicit list if provided
+            if allowed_compute is not None and compute not in allowed_compute:
+                return False
+        return True
+
+    cuda_cflags = [f for f in cuda_cflags if _keep_gencode(f)]
+
     ldflags = [
         "-shared",
         "-L$cuda_home/lib64",
@@ -268,6 +312,29 @@ def _get_num_workers() -> Optional[int]:
 
 
 def run_ninja(workdir: Path, ninja_file: Path, verbose: bool) -> None:
+
+    for key in ["NVCCFLAGS", "CFLAGS", "CXXFLAGS"]:
+        if key in os.environ and "103a" in os.environ[key]:
+            os.environ[key] = os.environ[key].replace("103a", "")
+            print(f"[PATCH] Cleaned {key} -> {os.environ[key]}")
+
+    for var in ["FLASHINFER_CUDA_ARCH_LIST", "TORCH_CUDA_ARCH_LIST", "CUDA_ARCH_LIST"]:
+        if var in os.environ and "103a" in os.environ[var]:
+            os.environ[var] = os.environ[var].replace("103a", "")
+            print(f"[PATCH] Cleaned {var} -> {os.environ[var]}")
+    # --- END PATCH ---
+
+    workdir.mkdir(parents=True, exist_ok=True)
+    command = [
+        "ninja",
+        "-v",
+        "-C",
+        str(workdir.resolve()),
+        "-f",
+        str(ninja_file.resolve()),
+    ]
+    
+    ##
     workdir.mkdir(parents=True, exist_ok=True)
     command = [
         "ninja",

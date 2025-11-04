@@ -77,9 +77,73 @@ def _create_build_metadata():
 _create_build_metadata()
 
 
+# def _compile_jit_cache(output_dir: Path, verbose: bool = True):
+#     """Compile AOT modules using flashinfer.aot functions directly."""
+#     from flashinfer import aot
+#  # --- PATCH: Strip unsupported CUDA archs for < CUDA 13.0 ---
+#     cuda_home = os.environ.get("CUDA_HOME", "/usr/local/cuda")
+#     nvcc_path = os.path.join(cuda_home, "bin", "nvcc")
+#     try:
+#         import subprocess
+#         result = subprocess.run([nvcc_path, "--version"], capture_output=True, text=True)
+#         if "release 12" in result.stdout:
+#             arch_env = os.environ.get("FLASHINFER_CUDA_ARCH_LIST", "")
+#             if arch_env:
+#                 cleaned = " ".join(
+#                     [a for a in arch_env.split() if not ("103a" in a or "103" in a)]
+#                 )
+#                 os.environ["FLASHINFER_CUDA_ARCH_LIST"] = cleaned
+#                 print(f"[PATCH] Cleaned FLASHINFER_CUDA_ARCH_LIST -> {cleaned}")
+#     except Exception as e:
+#         print(f"[PATCH] CUDA arch cleanup skipped ({e})")
+#     # --- END PATCH ---
+
+
+#     # Get the project root directory
+#     project_root = Path(__file__).parent.parent
+
+#     # Set up build directory
+#     build_dir = project_root / "build" / "aot"
+
+#     # Use the centralized compilation function from aot.py
+#     aot.compile_and_package_modules(
+#         out_dir=output_dir,
+#         build_dir=build_dir,
+#         project_root=project_root,
+#         config=None,  # Use default config
+#         verbose=verbose,
+#         skip_prebuilt=False,
+#     )
+
 def _compile_jit_cache(output_dir: Path, verbose: bool = True):
     """Compile AOT modules using flashinfer.aot functions directly."""
     from flashinfer import aot
+    import subprocess
+
+    # --- HARD PATCH: strip unsupported archs globally ---
+    cuda_home = os.environ.get("CUDA_HOME", "/usr/local/cuda")
+    nvcc_path = os.path.join(cuda_home, "bin", "nvcc")
+
+    try:
+        result = subprocess.run([nvcc_path, "--version"], capture_output=True, text=True)
+        if "release 12" in result.stdout:
+            for var in ["FLASHINFER_CUDA_ARCH_LIST", "TORCH_CUDA_ARCH_LIST", "CUDA_ARCH_LIST"]:
+                arch_env = os.environ.get(var, "")
+                if arch_env:
+                    cleaned = " ".join(
+                        [a for a in arch_env.split() if not ("103a" in a or "103" in a)]
+                    )
+                    os.environ[var] = cleaned
+                    print(f"[PATCH] Cleaned {var} -> {cleaned}")
+
+            # additionally patch NVCCFLAGS if set by build tools
+            nvccflags = os.environ.get("NVCCFLAGS", "")
+            if nvccflags and "103a" in nvccflags:
+                os.environ["NVCCFLAGS"] = nvccflags.replace("103a", "")
+                print(f"[PATCH] Cleaned NVCCFLAGS -> {os.environ['NVCCFLAGS']}")
+    except Exception as e:
+        print(f"[PATCH] CUDA arch cleanup skipped ({e})")
+    # --- END PATCH ---
 
     # Get the project root directory
     project_root = Path(__file__).parent.parent
@@ -96,7 +160,6 @@ def _compile_jit_cache(output_dir: Path, verbose: bool = True):
         verbose=verbose,
         skip_prebuilt=False,
     )
-
 
 def _build_aot_modules():
     # First, ensure AOT modules are compiled
